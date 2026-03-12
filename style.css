@@ -44,7 +44,7 @@ body {
     font-family: 'Inter', sans-serif;
     background-color: var(--color-bg-light);
     color: var(--color-text-light);
-    transition: var(--transition-premium);
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 html.dark body {
@@ -60,8 +60,7 @@ html.dark select option {
 
 .modal {
     display: none;
-    backdrop-filter: blur(12px);
-    background-color: rgba(0, 0, 0, 0.4);
+    background-color: rgba(0, 0, 0, 0.5);
 }
 
 .modal.active {
@@ -281,7 +280,7 @@ html.dark #data-table th {
     background-color: transparent;
     border-top: 1px solid #f1f5f9;
     border-bottom: 1px solid #f1f5f9;
-    transition: var(--transition-premium);
+    transition: background-color 0.15s ease;
 }
 
 #data-table td:first-child {

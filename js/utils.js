@@ -47,16 +47,19 @@ export function showToast(message, type = 'info', duration = 3000) {
  * @param {string} str
  * @returns {Date|null}
  */
+const _parseDateCache = new Map();
 export const parseDate = (str) => {
     if (!str || typeof str !== 'string' || !str.includes('/')) return null;
+    if (_parseDateCache.has(str)) return _parseDateCache.get(str);
     const parts = str.split('/');
     if (parts.length !== 3) return null;
     let [day, month, year] = parts.map(p => parseInt(p, 10));
-    if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+    if (isNaN(day) || isNaN(month) || isNaN(year)) { _parseDateCache.set(str, null); return null; }
     const fullYear = year < 100 ? (year > 50 ? 1900 + year : 2000 + year) : year;
     const date = new Date(Date.UTC(fullYear, month - 1, day));
-    if (date && date.getUTCMonth() === month - 1) return date;
-    return null;
+    const result = (date && date.getUTCMonth() === month - 1) ? date : null;
+    _parseDateCache.set(str, result);
+    return result;
 };
 
 /**

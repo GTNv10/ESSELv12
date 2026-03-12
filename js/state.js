@@ -27,13 +27,26 @@ export function saveData(temporalCheckbox) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state.appData));
     } catch (e) {
         if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-            // Disparar evento para que la UI muestre un aviso visible al usuario
             window.dispatchEvent(new CustomEvent('gtn:storage-full'));
         } else {
             console.error("Error guardando datos:", e);
         }
     }
 }
+
+let _saveDebounceTimer = null;
+/**
+ * Versión debounced de saveData. Agrupa múltiples ediciones rápidas en una única escritura.
+ * Ideal para llamadas desde celdas editables (onblur, oninput de filtros, etc).
+ * @param {HTMLInputElement} temporalCheckbox
+ * @param {number} delay - ms de espera (default 400)
+ */
+export function saveDataDebounced(temporalCheckbox, delay = 400) {
+    if (temporalCheckbox && temporalCheckbox.checked) return;
+    clearTimeout(_saveDebounceTimer);
+    _saveDebounceTimer = setTimeout(() => saveData(temporalCheckbox), delay);
+}
+
 
 /**
  * Carga appData desde localStorage o inicializa el esquema por defecto.

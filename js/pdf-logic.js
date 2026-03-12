@@ -39,17 +39,29 @@ function promptForImages(imageFields) {
     const newFileInput = newDropzone.querySelector('input[type="file"]');
 
     const handleFiles = (files) => {
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            if (file && file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    uploadedImagesArray.push(e.target.result);
+        // Filtrar solo archivos de imagen primero
+        const imageFiles = Array.from(files).filter(f => f && f.type.startsWith('image/'));
+        if (imageFiles.length === 0) return;
+
+        // Reservar posiciones en el array ANTES de leer (FileReader es asíncrono,
+        // sin esto el orden de inserción dependería del tiempo de carga de cada archivo)
+        const startIndex = uploadedImagesArray.length;
+        uploadedImagesArray.push(...new Array(imageFiles.length).fill(null));
+
+        let loadedCount = 0;
+        imageFiles.forEach((file, i) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                uploadedImagesArray[startIndex + i] = e.target.result; // insertar en posición correcta
+                loadedCount++;
+                if (loadedCount === imageFiles.length) {
+                    // Limpiar posibles nulos (por si acaso) y re-renderizar solo cuando todas cargaron
+                    uploadedImagesArray = uploadedImagesArray.filter(img => img !== null);
                     renderImageGrid(imageFields);
-                };
-                reader.readAsDataURL(file);
-            }
-        }
+                }
+            };
+            reader.readAsDataURL(file);
+        });
     };
 
     newFileInput.onchange = (e) => handleFiles(e.target.files);
@@ -236,7 +248,17 @@ export function processAndShowPreview() {
 
 function showPreview(content) {
     const previewText = document.getElementById('preview-text');
-    previewText.innerHTML = content.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\*(.*?)\*/g, '<i>$1</i>').replace(/\n/g, '<br>');
+    // Replicar algo de la lógica visual para el modal HTML
+    let htmlContent = content
+        .replace(/^### (.*$)/gim, '<h3 class="text-lg font-bold mt-2 mb-1" style="text-align:left;">$1</h3>')
+        .replace(/^## (.*$)/gim, '<h2 class="text-xl font-bold mt-3 mb-2" style="text-align:left;">$1</h2>')
+        .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold mt-4 mb-3" style="text-align:left;">$1</h1>')
+        .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+        .replace(/\*(.*?)\*/g, '<i>$1</i>')
+        .replace(/\n\n+/g, '</p><p class="mb-3">')
+        .replace(/\n/g, '<br>');
+
+    previewText.innerHTML = `<div style="text-align: justify; line-height: 1.5;"><p class="mb-3">${htmlContent}</p></div>`;
     elements.previewModal.classList.add('active');
 }
 
@@ -278,45 +300,194 @@ export async function downloadPDF() {
     }
 
     try {
+        if (!window.jspdf) {
+            showToast('La librería PDF todavía está cargando. Reintentá en unos segundos.', 'warning');
+            return;
+        }
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
         const margin = 20;
         const usableWidth = doc.internal.pageSize.getWidth() - (2 * margin);
         const pageHeight = doc.internal.pageSize.getHeight();
-        const fontSize = 12;
-        const lineHeight = (fontSize * 1.3) * 0.352778;
+        const baseFontSize = 12;
+        const fontName = template.hasOwnProperty('fontFamily') && template.fontFamily ? template.fontFamily : 'Helvetica';
+
         let cursorY = margin;
-        const addPageIfNeeded = (requiredHeight) => { if (cursorY + requiredHeight > pageHeight - margin) { doc.addPage(); cursorY = margin; return true; } return false; };
-        const parseStyledText = (text) => {
-            const parts = [];
-            text.split('**').forEach((segment, boldIndex) => {
-                const isBold = boldIndex % 2 !== 0;
-                segment.split('*').forEach((subSegment, italicIndex) => {
-                    const isItalic = italicIndex % 2 !== 0;
-                    if (subSegment.length > 0) parts.push({ text: subSegment, bold: isBold, italic: isItalic });
-                });
-            });
-            return parts;
+
+        const addPageIfNeeded = (requiredHeight) => {
+            if (cursorY + requiredHeight > pageHeight - margin) {
+                doc.addPage();
+                cursorY = margin;
+                return true;
+            }
+            return false;
         };
+
         const getFontStyle = (bold, italic) => { if (bold && italic) return 'bolditalic'; if (bold) return 'bold'; if (italic) return 'italic'; return 'normal'; };
-        const writeLineWithMarkdown = (line, x) => {
-            let currentX = x;
-            const segments = parseStyledText(line);
-            for (const segment of segments) {
-                doc.setFont(template.fontFamily || 'Helvetica', getFontStyle(segment.bold, segment.italic));
-                const tokens = segment.text.split(/(\s+)/);
-                for (const token of tokens) {
-                    if (token.length === 0) continue;
-                    const tokenWidth = doc.getStringUnitWidth(token) * fontSize / doc.internal.scaleFactor;
-                    if (currentX + tokenWidth > x + usableWidth) { cursorY += lineHeight; addPageIfNeeded(lineHeight); currentX = x; }
-                    doc.text(token, currentX, cursorY);
-                    currentX += tokenWidth;
+
+        // Nuevo parseador Markdown con Regex (más robusto que split)
+        const parseMarkdown = (text) => {
+            const tokens = [];
+            let i = 0;
+            let currentText = '';
+            let isBold = false;
+            let isItalic = false;
+
+            while (i < text.length) {
+                if (text.substring(i, i + 2) === '**') {
+                    if (currentText) tokens.push({ text: currentText, bold: isBold, italic: isItalic });
+                    currentText = '';
+                    isBold = !isBold;
+                    i += 2;
+                } else if (text[i] === '*') {
+                    if (currentText) tokens.push({ text: currentText, bold: isBold, italic: isItalic });
+                    currentText = '';
+                    isItalic = !isItalic;
+                    i++;
+                } else {
+                    currentText += text[i];
+                    i++;
                 }
             }
-            doc.setFont(template.fontFamily || 'Helvetica', 'normal');
+            if (currentText) tokens.push({ text: currentText, bold: isBold, italic: isItalic });
+            return tokens;
         };
-        doc.setFont(template.fontFamily || 'Helvetica', 'normal');
-        doc.setFontSize(fontSize);
+
+        // Calcula el ancho total de una palabra (puede estar compuesta de múltiples tokens con distintos estilos)
+        const calculateWordWidth = (wordTokens, currentFontSize) => {
+            let width = 0;
+            doc.setFontSize(currentFontSize);
+            wordTokens.forEach(token => {
+                doc.setFont(fontName, getFontStyle(token.bold, token.italic));
+                width += doc.getStringUnitWidth(token.text) * currentFontSize / doc.internal.scaleFactor;
+            });
+            return width;
+        };
+
+        // Renderiza una línea alineada justificadamente (o a la izquierda si es la última del párrafo)
+        const renderLine = (lineWords, y, currentFontSize, isLastLine) => {
+            doc.setFontSize(currentFontSize);
+            const spaceWidth = doc.getStringUnitWidth(' ') * currentFontSize / doc.internal.scaleFactor;
+            let totalWordsWidth = lineWords.reduce((sum, word) => sum + word.width, 0);
+
+            let extraSpacePerWord = 0;
+            // Solo justificar si no es la última línea del párrafo y hay más de 1 palabra
+            if (!isLastLine && lineWords.length > 1) {
+                const emptySpace = usableWidth - totalWordsWidth;
+                extraSpacePerWord = emptySpace / (lineWords.length - 1);
+            } else {
+                extraSpacePerWord = spaceWidth; // Alineación izquierda normal
+            }
+
+            let currentX = margin;
+            lineWords.forEach((word) => {
+                word.tokens.forEach(token => {
+                    doc.setFont(fontName, getFontStyle(token.bold, token.italic));
+                    doc.text(token.text, currentX, y);
+                    currentX += doc.getStringUnitWidth(token.text) * currentFontSize / doc.internal.scaleFactor;
+                });
+                currentX += extraSpacePerWord; // Añadir el espacio (justificado o normal) entre palabras
+            });
+        };
+
+        const processParagraph = (paragraph, options = {}) => {
+            if (!paragraph || paragraph.trim() === '') {
+                cursorY += options.lineHeight || (baseFontSize * 1.5 * 0.352778);
+                return;
+            }
+
+            const isHeading1 = paragraph.startsWith('# ');
+            const isHeading2 = paragraph.startsWith('## ');
+            const isHeading3 = paragraph.startsWith('### ');
+
+            let cleanParagraph = paragraph;
+            let currentFontSize = baseFontSize;
+            let isGlobalBold = false;
+            let postParagraphSpacing = 4; // Espacio extra después de cada párrafo (en mm)
+
+            if (isHeading1) {
+                cleanParagraph = paragraph.substring(2);
+                currentFontSize = baseFontSize + 6;
+                isGlobalBold = true;
+                postParagraphSpacing = 6;
+                cursorY += 4; // Margen superior extra para Título 1
+            } else if (isHeading2) {
+                cleanParagraph = paragraph.substring(3);
+                currentFontSize = baseFontSize + 4;
+                isGlobalBold = true;
+                postParagraphSpacing = 5;
+                cursorY += 2;
+            } else if (isHeading3) {
+                cleanParagraph = paragraph.substring(4);
+                currentFontSize = baseFontSize + 2;
+                isGlobalBold = true;
+                postParagraphSpacing = 4;
+            }
+
+            const currentLineHeight = (currentFontSize * 1.5) * 0.352778; // Interlineado 1.5
+            addPageIfNeeded(currentLineHeight);
+
+            const tokens = parseMarkdown(cleanParagraph);
+            if (isGlobalBold) tokens.forEach(t => t.bold = true);
+
+            // Reensamblar en palabras manteniendola estructura de tokens
+            const words = [];
+            let currentWordTokens = [];
+
+            tokens.forEach(token => {
+                const tokenWords = token.text.split(/(\s+)/);
+                tokenWords.forEach(tw => {
+                    if (tw.trim() === '') {
+                        if (currentWordTokens.length > 0) {
+                            words.push({ tokens: currentWordTokens, width: calculateWordWidth(currentWordTokens, currentFontSize) });
+                            currentWordTokens = [];
+                        }
+                    } else {
+                        currentWordTokens.push({ text: tw, bold: token.bold, italic: token.italic });
+                    }
+                });
+            });
+            if (currentWordTokens.length > 0) {
+                words.push({ tokens: currentWordTokens, width: calculateWordWidth(currentWordTokens, currentFontSize) });
+            }
+
+            // Wrapping
+            const lines = [];
+            let currentLineWords = [];
+            let currentLineWidth = 0;
+            const spaceWidth = (doc.getStringUnitWidth(' ') * currentFontSize / doc.internal.scaleFactor) * 0.9; // Base space
+
+            words.forEach(word => {
+                const widthIfAdded = currentLineWidth + (currentLineWords.length > 0 ? spaceWidth : 0) + word.width;
+                if (widthIfAdded > usableWidth && currentLineWords.length > 0) {
+                    lines.push(currentLineWords);
+                    currentLineWords = [word];
+                    currentLineWidth = word.width;
+                } else {
+                    currentLineWords.push(word);
+                    currentLineWidth += (currentLineWords.length > 1 ? spaceWidth : 0) + word.width;
+                }
+            });
+            if (currentLineWords.length > 0) lines.push(currentLineWords);
+
+            // Renderizado de líneas
+            lines.forEach((line, index) => {
+                const isLastLine = index === lines.length - 1;
+                addPageIfNeeded(currentLineHeight);
+                // Si es un título, nunca lo justificamos (queda raro), lo alineamos a la izquierda
+                const forceLeftAlign = isLastLine || isHeading1 || isHeading2 || isHeading3;
+                renderLine(line, cursorY, currentFontSize, forceLeftAlign);
+                cursorY += currentLineHeight;
+            });
+
+            // Espaciado post-párrafo
+            cursorY += postParagraphSpacing;
+        };
+
+        // --- FIN PARSER MEJORADO ---
+
+        doc.setFontSize(baseFontSize);
+        
         const contentWithPlaceholders = state.pendingPDFGeneration.template.content;
         // Build manualValues once (not per-placeholder inside replace() callback)
         const manualValues = {};
@@ -332,6 +503,7 @@ export async function downloadPDF() {
             return '';
         });
         const parts = finalRenderableContent.split(/(\{\{IMAGEN:.*?\}\})/g);
+        
         for (const part of parts) {
             if (part.startsWith('{{IMAGEN:')) {
                 const imageName = part.slice(9, -2).trim();
@@ -346,7 +518,7 @@ export async function downloadPDF() {
                         const maxImgHeight = pageHeight / 2;
 
                         // Si la imagen no cabe en la página actual, saltar a la siguiente
-                        addPageIfNeeded(imgHeight + lineHeight);
+                        addPageIfNeeded(imgHeight + (baseFontSize * 1.5 * 0.352778));
 
                         if (imgHeight > maxImgHeight) {
                             imgHeight = maxImgHeight;
@@ -354,22 +526,19 @@ export async function downloadPDF() {
                         }
 
                         doc.addImage(base64Image, 'JPEG', margin, cursorY, imgWidth, imgHeight);
-                        cursorY += imgHeight + lineHeight;
+                        cursorY += imgHeight + (baseFontSize * 1.5 * 0.352778);
 
                         // Añadir un poco de espacio extra entre múltiples imágenes del mismo bloque, salvo la última
                         if (index < base64Images.length - 1) {
-                            cursorY += lineHeight;
-                            addPageIfNeeded(lineHeight);
+                            cursorY += baseFontSize * 1.5 * 0.352778;
+                            addPageIfNeeded(baseFontSize * 1.5 * 0.352778);
                         }
                     });
                 }
             } else {
                 const paragraphs = part.split('\n');
-                paragraphs.forEach((paragraph, pIndex) => {
-                    if (paragraph.trim() === '') { if (pIndex < paragraphs.length - 1) { cursorY += lineHeight; addPageIfNeeded(lineHeight); } return; }
-                    addPageIfNeeded(lineHeight);
-                    writeLineWithMarkdown(paragraph, margin);
-                    cursorY += lineHeight;
+                paragraphs.forEach(paragraph => {
+                    processParagraph(paragraph);
                 });
             }
         }
@@ -388,6 +557,7 @@ export async function downloadPDF() {
 
 export function exportDataToExcel(data, filename) {
     if (data.length === 0) { showToast("No hay datos para exportar.", "warning"); return false; }
+    if (!window.XLSX) { showToast('La librería Excel todavía está cargando. Reintentá en unos segundos.', 'warning'); return false; }
     const XLSX = window.XLSX;
     const dataToExport = data.map(row => { const exportRow = {}; state.appData.headers.forEach(h => { exportRow[h] = row[h]; }); return exportRow; });
     const worksheet = XLSX.utils.json_to_sheet(dataToExport, { header: state.appData.headers });

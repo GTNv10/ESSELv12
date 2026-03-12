@@ -1,6 +1,6 @@
 // js/ui-render.js — Manipulación del DOM y Renderizado de la Interfaz
 
-import { state, saveData } from './state.js';
+import { state, saveData, saveDataDebounced } from './state.js';
 import { elements } from './elements.js';
 import { showToast, parseDate, formatDate, calculateDays, createDateInputComponent, escapeHtml } from './utils.js';
 
@@ -63,6 +63,11 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
         const colorColumn = state.appData.colorCodingColumn;
         const colorDbKey = colorColumn ? `_list_${colorColumn}` : null;
         const colorDb = colorDbKey ? state.appData.referenceDB[colorDbKey] : null;
+        // Pre-cache alert list sorted once per render (evita sort por fila)
+        const sortedAlerts = state.appData.visualAlerts ? [...state.appData.visualAlerts].filter(a => a.enabled).sort((a, b) => b.value - a.value) : [];
+
+        // Usar DocumentFragment: un único append al DOM al final, sin reflow por fila
+        const fragment = document.createDocumentFragment();
 
         paginatedData.forEach((row, rowIndex) => {
             const tr = document.createElement('tr');
@@ -71,7 +76,6 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
             const isSelected = state.selectedRowId === row.id;
             if (isSelected) tr.classList.add('selected-row');
 
-            // Resolve the background and text color for this row
             let resolvedBg = '';
             let resolvedText = '';
 
@@ -79,22 +83,17 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
                 const valueForColor = row[colorColumn];
                 const colorConfig = colorDb[valueForColor] || colorDb['__DEFAULT__'];
                 if (colorConfig) {
-                    resolvedBg = theme === 'dark' ? (colorConfig.dark || '') : (colorConfig.light || '');
-                    const textColor = theme === 'dark' ? colorConfig.textDark : colorConfig.textLight;
-                    // Apply any user-defined text color (no exclusions — the user chose it)
-                    if (textColor && textColor !== 'inherit') {
-                        resolvedText = textColor;
-                    }
+                    resolvedBg = colorConfig.bg || colorConfig.light || '';
+                    const textColor = colorConfig.text || colorConfig.textLight;
+                    if (textColor && textColor !== 'inherit') resolvedText = textColor;
                 }
             }
 
-            // Apply row-level background and text (for layout/fallback)
             if (resolvedBg) tr.style.backgroundColor = resolvedBg;
             if (resolvedText) tr.style.color = resolvedText;
 
             const selectionTd = document.createElement('td');
             selectionTd.className = "sticky-col p-1 text-center";
-            // Selection column always needs an explicit background to match the row
             let rowBgColor = resolvedBg || (theme === 'dark'
                 ? (rowIndex % 2 === 1 ? '#1f2937' : '#111827')
                 : (rowIndex % 2 === 1 ? '#ffffff' : '#f9fafb'));
@@ -113,8 +112,6 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
                 td.className = "p-0 text-center align-middle";
                 td.dataset.columnHeader = header;
 
-                // Apply row color coding directly to the td so it renders reliably
-                // (tr background can be unreliable with border-collapse:separate + transparent td)
                 if (!isSelected && resolvedBg) {
                     td.style.backgroundColor = resolvedBg;
                     if (resolvedText) td.style.color = resolvedText;
@@ -122,10 +119,8 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
 
                 if (header === daysDisplayCol) {
                     const diasValue = parseInt(value, 10);
-                    const sortedAlerts = state.appData.visualAlerts ? [...state.appData.visualAlerts].sort((a, b) => b.value - a.value) : [];
                     if (!isNaN(diasValue)) {
                         for (const alert of sortedAlerts) {
-                            if (!alert.enabled) continue;
                             const alertValue = parseInt(alert.value, 10);
                             let conditionMet = false;
                             if (alert.condition === '>=') conditionMet = diasValue >= alertValue;
@@ -163,8 +158,9 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
                 }
                 tr.appendChild(td);
             });
-            tbody.appendChild(tr);
+            fragment.appendChild(tr);
         });
+        tbody.appendChild(fragment);
     }
     table.appendChild(tbody);
     elements.tableContainer.innerHTML = '';
@@ -279,7 +275,7 @@ function createFilterUI(filter, index, handleRowSelectionCb, handleCellUpdateCb)
             conditionSelect.innerHTML = `<option value="=" ${filter.condition === '=' ? 'selected' : ''}>Es igual a</option>`;
             filter.condition = '=';
         }
-        conditionSelect.onchange = (e) => { filter.condition = e.target.value; saveData(elements.temporalModeCheckbox); };
+        conditionSelect.onchange = (e) => { filter.condition = e.target.value; saveDataDebounced(elements.temporalModeCheckbox); };
         wrapper.appendChild(conditionSelect);
 
         if (format === 'list') {
@@ -301,7 +297,7 @@ function createFilterUI(filter, index, handleRowSelectionCb, handleCellUpdateCb)
             valueInput.type = 'text'; valueInput.placeholder = 'Valor...';
             valueInput.className = 'flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm';
             valueInput.value = filter.value || '';
-            valueInput.oninput = () => { filter.value = valueInput.value; saveData(elements.temporalModeCheckbox); };
+            valueInput.oninput = () => { filter.value = valueInput.value; saveDataDebounced(elements.temporalModeCheckbox); };
             wrapper.appendChild(valueInput);
         }
     }
@@ -392,7 +388,7 @@ export function updateSummaryBar() {
         const span = document.createElement('span');
         span.className = 'text-xs px-2 py-1 rounded-full font-bold';
         const colorConfig = colorDb ? (colorDb[value] || colorDb['__DEFAULT__']) : null;
-        if (colorConfig) { span.style.backgroundColor = theme === 'dark' ? colorConfig.dark : colorConfig.light; span.style.color = theme === 'dark' ? colorConfig.textDark : colorConfig.textLight; }
+        if (colorConfig) { span.style.backgroundColor = colorConfig.bg || colorConfig.light; span.style.color = colorConfig.text || colorConfig.textLight; }
         else { span.style.backgroundColor = theme === 'dark' ? '#374151' : '#e5e7eb'; span.style.color = theme === 'dark' ? '#d1d5db' : '#374151'; }
         span.textContent = `${value}: ${count}`;
         bar.appendChild(span);
@@ -435,14 +431,11 @@ export function applyTheme(theme, handleRowSelectionCb, handleCellUpdateCb) {
     elements.themeToggleLightIcon.classList.toggle('hidden', theme !== 'dark');
 
     // Set CSS variables for selection colors
-    const selColors = state.appData.selectedRowColors || { bgLight: '#fef3c7', textLight: '#854d0e', bgDark: '#334155', textDark: '#f8fafc' };
-    if (theme === 'dark') {
-        document.documentElement.style.setProperty('--color-selection-bg', selColors.bgDark);
-        document.documentElement.style.setProperty('--color-selection-text', selColors.textDark);
-    } else {
-        document.documentElement.style.setProperty('--color-selection-bg', selColors.bgLight);
-        document.documentElement.style.setProperty('--color-selection-text', selColors.textLight);
-    }
+    const selColors = state.appData.selectedRowColors || { bg: '#fef3c7', text: '#854d0e' };
+    const bg = selColors.bg || selColors.bgLight || '#fef3c7';
+    const text = selColors.text || selColors.textLight || '#854d0e';
+    document.documentElement.style.setProperty('--color-selection-bg', bg);
+    document.documentElement.style.setProperty('--color-selection-text', text);
 
     fullReloadUI(handleRowSelectionCb, handleCellUpdateCb);
 }

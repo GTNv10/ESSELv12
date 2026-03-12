@@ -1,5 +1,5 @@
 // js/main.js — Punto de Entrada y Orchestrador
-import { state, saveData, loadData } from './state.js';
+import { state, saveData, saveDataDebounced, loadData } from './state.js';
 import { elements } from './elements.js';
 import { showToast, formatDate, parseDate, formatCuitCuil, calculateDays, recalculateAllDays, createDateInputComponent, getFormattedDateForFilename, escapeHtml } from './utils.js';
 import { populateModals, renderTable, renderFilters, renderTemplates, sortAndApplyFilters, applyTheme, fullReloadUI, updateSelectionStatus, updateSelectedRowIdentifierDisplay, showConfirmModal, showPromptModal } from './ui-render.js';
@@ -77,8 +77,22 @@ function handleCellUpdate(rowId, column, value) {
         }
     });
     if (dateCalcCol && daysDisplayCol && column === dateCalcCol) { row[daysDisplayCol] = calculateDays(finalValue); needsRerender = true; }
-    saveData(elements.temporalModeCheckbox);
-    if (needsRerender || column === state.appData.colorCodingColumn || column === state.appData.selectedRowIdentifierColumn) { sortAndApplyFilters(handleRowSelection, handleCellUpdate); updateSelectedRowIdentifierDisplay(); }
+
+    // Decidir si hace falta un re-render completo o solo guardar
+    const isColorCodingCol = column === state.appData.colorCodingColumn;
+    const isSortCol = column === state.appData.sortBy;
+    const isIdentifierCol = column === state.appData.selectedRowIdentifierColumn;
+
+    if (needsRerender || isColorCodingCol || isSortCol) {
+        // Cambio estructural: re-render completo
+        saveData(elements.temporalModeCheckbox);
+        sortAndApplyFilters(handleRowSelection, handleCellUpdate);
+        if (isIdentifierCol) updateSelectedRowIdentifierDisplay();
+    } else {
+        // Cambio solo de dato: guardar debounced, sin re-render
+        saveDataDebounced(elements.temporalModeCheckbox);
+        if (isIdentifierCol) updateSelectedRowIdentifierDisplay();
+    }
 }
 
 // --- PLANTILLAS ---
@@ -137,6 +151,7 @@ function addTemplatePlaceholder(fieldName, type) {
     const existingText = Array.from(pc.querySelectorAll('.manual-field-container')).map(c => c.dataset.placeholder);
     const existingImage = Array.from(pc.querySelectorAll('.image-field-container')).map(c => c.dataset.placeholder);
     if ([...state.appData.headers, ...existingText, ...existingImage].includes(fieldName)) return showToast('El campo ya existe.', 'warning');
+    insertPlaceholderForTemplate(fieldName, type);
     if (type === 'text') updatePlaceholders([...existingText, fieldName], existingImage);
     else updatePlaceholders(existingText, [...existingImage, fieldName]);
 }
@@ -176,9 +191,26 @@ function saveTemplate() {
     if (!name) return showToast('El nombre de la plantilla es obligatorio.', 'warning');
     const content = document.getElementById('template-content').value;
     const fontFamily = document.getElementById('template-font').value;
+    
+    const textMatches = Array.from(content.matchAll(/\{\{(?!IMAGEN:)(.*?)\}\}/g)).map(m => m[1].trim());
+    const extractedManualFields = [...new Set(textMatches)].filter(m => !state.appData.headers.includes(m) && m !== 'fecha_actual' && m !== 'nombre_plantilla');
+    
+    const imgMatches = Array.from(content.matchAll(/\{\{IMAGEN:(.*?)\}\}/g)).map(m => m[1].trim());
+    const extractedImageFields = [...new Set(imgMatches)];
+
     const pc = document.getElementById('placeholders-container');
-    const manualFields = Array.from(pc.querySelectorAll('.manual-field-container')).map(c => c.dataset.placeholder);
-    const imageFields = Array.from(pc.querySelectorAll('.image-field-container')).map(c => c.dataset.placeholder);
+    const uiManualFields = Array.from(pc.querySelectorAll('.manual-field-container')).map(c => c.dataset.placeholder);
+    const uiImageFields = Array.from(pc.querySelectorAll('.image-field-container')).map(c => c.dataset.placeholder);
+    
+    const manualFields = extractedManualFields.sort((a, b) => {
+        const ia = uiManualFields.indexOf(a); const ib = uiManualFields.indexOf(b);
+        if (ia === -1 && ib === -1) return 0; if (ia === -1) return 1; if (ib === -1) return -1; return ia - ib;
+    });
+    const imageFields = extractedImageFields.sort((a, b) => {
+        const ia = uiImageFields.indexOf(a); const ib = uiImageFields.indexOf(b);
+        if (ia === -1 && ib === -1) return 0; if (ia === -1) return 1; if (ib === -1) return -1; return ia - ib;
+    });
+
     if (id) { const idx = state.appData.templates.findIndex(t => t.id === id); if (idx > -1) state.appData.templates[idx] = { ...state.appData.templates[idx], name, content, manualFields, imageFields, fontFamily }; }
     else { state.appData.templates.push({ id: `template_${Date.now()}`, name, content, manualFields, imageFields, fontFamily }); }
     saveData(elements.temporalModeCheckbox); renderTemplates(); elements.templateModal.classList.remove('active'); showToast('Plantilla guardada.', 'success');
@@ -234,7 +266,7 @@ function handleColumnWidthChange(header, width) {
 
 function handleFormatChange(header, newFormat) {
     if (newFormat === 'text') delete state.appData.columnFormats[header]; else state.appData.columnFormats[header] = newFormat;
-    if (newFormat === 'list') { const listKey = `_list_${header}`; if (!state.appData.referenceDB[listKey]) { state.appData.referenceDB[listKey] = { '__DEFAULT__': { light: '#f9fafb', dark: '#111827', textLight: '#1f2937', textDark: '#f3f4f6' } }; showToast(`Se creó una nueva BD para la lista "${header}".`, 'info'); } }
+    if (newFormat === 'list') { const listKey = `_list_${header}`; if (!state.appData.referenceDB[listKey]) { state.appData.referenceDB[listKey] = { '__DEFAULT__': { bg: '#f9fafb', text: '#1f2937' } }; showToast(`Se creó una nueva BD para la lista "${header}".`, 'info'); } }
     saveData(elements.temporalModeCheckbox); openColumnsModal();
 }
 
@@ -406,12 +438,12 @@ function renderDbTables() {
     if (state.appData.colorCodingColumn) {
         const colorDbKey = `_list_${state.appData.colorCodingColumn}`; const colorDbData = state.appData.referenceDB[colorDbKey];
         if (colorDbData) {
-            const colorTable = document.createElement('table'); colorTable.className = 'w-full text-sm mt-4'; colorTable.innerHTML = `<thead class="border-b dark:border-gray-700 text-gray-700 dark:text-gray-300 text-center"><th class="p-2 text-left">Valor</th><th class="p-2">Fondo Claro</th><th class="p-2">Texto Claro</th><th class="p-2">Fondo Oscuro</th><th class="p-2">Texto Oscuro</th></thead>`;
+            const colorTable = document.createElement('table'); colorTable.className = 'w-full text-sm mt-4'; colorTable.innerHTML = `<thead class="border-b dark:border-gray-700 text-gray-700 dark:text-gray-300 text-center"><th class="p-2 text-left">Valor</th><th class="p-2 w-1/3">Fondo</th><th class="p-2 w-1/3">Texto</th></thead>`;
             const colorTbody = document.createElement('tbody');
             const entries = [['__DEFAULT__', colorDbData['__DEFAULT__']], ...Object.entries(colorDbData).filter(([k]) => k !== '__DEFAULT__')];
             entries.forEach(([key, values]) => {
                 if (!values) return; const tr = document.createElement('tr'); tr.className = "border-b dark:border-gray-600";
-                tr.innerHTML = `<td class="p-1 font-semibold text-gray-800 dark:text-gray-200">${key === '__DEFAULT__' ? 'Por Defecto' : escapeHtml(key)}</td><td class="p-1"><input type="color" class="db-color-input w-full h-8 p-0 border-0 bg-transparent rounded" value="${escapeHtml(values.light || '#ffffff')}" data-db-key="${escapeHtml(colorDbKey)}" data-entry-key="${escapeHtml(key)}" data-field="light"></td><td class="p-1"><input type="color" class="db-color-input w-full h-8 p-0 border-0 bg-transparent rounded" value="${escapeHtml(values.textLight || '#000000')}" data-db-key="${escapeHtml(colorDbKey)}" data-entry-key="${escapeHtml(key)}" data-field="textLight"></td><td class="p-1"><input type="color" class="db-color-input w-full h-8 p-0 border-0 bg-transparent rounded" value="${escapeHtml(values.dark || '#111827')}" data-db-key="${escapeHtml(colorDbKey)}" data-entry-key="${escapeHtml(key)}" data-field="dark"></td><td class="p-1"><input type="color" class="db-color-input w-full h-8 p-0 border-0 bg-transparent rounded" value="${escapeHtml(values.textDark || '#f3f4f6')}" data-db-key="${escapeHtml(colorDbKey)}" data-entry-key="${escapeHtml(key)}" data-field="textDark"></td>`;
+                tr.innerHTML = `<td class="p-1 font-semibold text-gray-800 dark:text-gray-200">${key === '__DEFAULT__' ? 'Por Defecto' : escapeHtml(key)}</td><td class="p-1"><input type="color" class="db-color-input w-full h-8 p-0 border-0 bg-transparent rounded" value="${escapeHtml(values.bg || values.light || '#ffffff')}" data-db-key="${escapeHtml(colorDbKey)}" data-entry-key="${escapeHtml(key)}" data-field="bg"></td><td class="p-1"><input type="color" class="db-color-input w-full h-8 p-0 border-0 bg-transparent rounded" value="${escapeHtml(values.text || values.textLight || '#000000')}" data-db-key="${escapeHtml(colorDbKey)}" data-entry-key="${escapeHtml(key)}" data-field="text"></td>`;
                 colorTbody.appendChild(tr);
             });
             colorTable.appendChild(colorTbody); colorCodingSection.appendChild(colorTable);
@@ -425,22 +457,24 @@ function renderDbTables() {
     colorCodingSection.addHTML(`<p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Define el color que tendrá una fila cuando haces clic sobre ella, independientemente de su valor.</p>`);
 
     const selectionColorsGrid = document.createElement('div');
-    selectionColorsGrid.className = 'grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm';
+    selectionColorsGrid.className = 'grid grid-cols-2 gap-4 text-sm max-w-sm';
 
-    const selColors = state.appData.selectedRowColors || { bgLight: '#fef3c7', textLight: '#854d0e', bgDark: '#334155', textDark: '#f8fafc' };
+    const prevColors = state.appData.selectedRowColors || { bgLight: '#fef3c7', textLight: '#854d0e' };
+    const selColors = { 
+        bg: prevColors.bg || prevColors.bgLight || '#fef3c7', 
+        text: prevColors.text || prevColors.textLight || '#854d0e' 
+    };
 
     [
-        { key: 'bgLight', label: 'Fondo Claro', default: '#fef3c7' },
-        { key: 'textLight', label: 'Texto Claro', default: '#854d0e' },
-        { key: 'bgDark', label: 'Fondo Oscuro', default: '#334155' },
-        { key: 'textDark', label: 'Texto Oscuro', default: '#f8fafc' }
+        { key: 'bg', label: 'Fondo', default: '#fef3c7' },
+        { key: 'text', label: 'Texto', default: '#854d0e' }
     ].forEach(opt => {
         const wrap = document.createElement('div');
         const lbl = document.createElement('label'); lbl.className = 'block text-xs text-gray-600 dark:text-gray-400 mb-1'; lbl.textContent = opt.label;
         const inp = document.createElement('input'); inp.type = 'color'; inp.className = 'w-full h-8 p-0 border-0 bg-transparent rounded cursor-pointer';
         inp.value = selColors[opt.key] || opt.default;
         inp.onchange = (e) => {
-            if (!state.appData.selectedRowColors) state.appData.selectedRowColors = { ...selColors };
+            if (!state.appData.selectedRowColors) state.appData.selectedRowColors = { bg: '#fef3c7', text: '#854d0e' };
             state.appData.selectedRowColors[opt.key] = e.target.value;
             saveData(elements.temporalModeCheckbox);
             const theme = elements.htmlTag.classList.contains('dark') ? 'dark' : 'light';
@@ -584,7 +618,7 @@ function addDbEntry(dbKey, config) {
     showPromptModal(`Ingrese el nuevo valor para la lista "${config.title}":`, (newKey) => {
         if (!state.appData.referenceDB[dbKey][newKey]) {
             const newEntry = {};
-            if (dbKey.startsWith('_list_')) { newEntry.light = '#ffffff'; newEntry.textLight = '#000000'; newEntry.dark = '#1f2937'; newEntry.textDark = '#f3f4f6'; }
+            if (dbKey.startsWith('_list_')) { newEntry.bg = '#ffffff'; newEntry.text = '#000000'; }
             (config.fields || []).forEach(field => { if (!field.isKey) newEntry[field.name] = ''; });
             state.appData.referenceDB[dbKey][newKey] = newEntry;
             if (dbKey.startsWith('_list_')) syncLookupKeys('ADD', dbKey.replace('_list_', ''), newKey);
