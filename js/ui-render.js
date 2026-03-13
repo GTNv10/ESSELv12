@@ -34,7 +34,9 @@ export function populateModals() {
 // --- TABLA ---
 
 export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
-    elements.tableContainer.style.setProperty('--table-font-size', `${state.appData.tableFontSize || 14}px`);
+    // Aplicar zoom guardado solo al area de la tabla, no al header
+    const tableMain = document.querySelector('main');
+    if (tableMain) tableMain.style.zoom = state.appData.tableZoom || 1;
     elements.tableContainer.style.setProperty('--table-text-color', state.appData.tableTextColor || 'inherit');
 
     const table = document.createElement('table');

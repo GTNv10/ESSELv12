@@ -329,10 +329,14 @@ function handleColumnRename(oldHeader, newHeader) {
 }
 
 function changeFontSize(amount) {
-    let currentSize = state.appData.tableFontSize || 14;
-    currentSize = Math.min(24, Math.max(10, currentSize + amount));
-    state.appData.tableFontSize = currentSize;
-    elements.tableContainer.style.setProperty('--table-font-size', `${currentSize}px`);
+    // Zoom solo en el area de la tabla (el <main>), el header queda igual
+    const tableMain = document.querySelector('main');
+    if (!tableMain) return;
+    let currentZoom = state.appData.tableZoom || 1;
+    currentZoom = Math.round((currentZoom + amount * 0.1) * 100) / 100;
+    currentZoom = Math.min(1.5, Math.max(0.4, currentZoom));
+    state.appData.tableZoom = currentZoom;
+    tableMain.style.zoom = currentZoom;
     saveData(elements.temporalModeCheckbox);
 }
 

@@ -118,7 +118,7 @@ export function loadData(temporalCheckbox, addRowCallback) {
                 if (!parsed.columnMetadata) state.appData.columnMetadata = {};
                 if (!parsed.sortBy) state.appData.sortBy = 'FECHA DE INICIO';
                 if (!parsed.sortOrder) state.appData.sortOrder = 'desc';
-                if (!parsed.tableFontSize) state.appData.tableFontSize = 14;
+                if (!parsed.tableZoom) state.appData.tableZoom = 1;
                 if (!parsed.tableTextColor) state.appData.tableTextColor = 'inherit';
                 if (!parsed.rowsPerPage) state.appData.rowsPerPage = 10;
                 if (!parsed.colorCodingColumn) state.appData.colorCodingColumn = 'ESTADO';
@@ -192,7 +192,7 @@ export function loadData(temporalCheckbox, addRowCallback) {
         pdfFilenameFormat: 'Documento_{{NOMBRE EMPRESA}}_{{FECHA DE INICIO}}',
         sortBy: 'FECHA DE INICIO',
         sortOrder: 'desc',
-        tableFontSize: 14,
+        tableZoom: 1,
         tableTextColor: 'inherit',
         rowsPerPage: 10,
         colorCodingColumn: 'ESTADO',
