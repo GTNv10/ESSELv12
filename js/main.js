@@ -2,7 +2,7 @@
 import { state, saveData, saveDataDebounced, loadData } from './state.js';
 import { elements } from './elements.js';
 import { showToast, formatDate, parseDate, formatCuitCuil, calculateDays, recalculateAllDays, createDateInputComponent, getFormattedDateForFilename, escapeHtml } from './utils.js';
-import { populateModals, renderTable, renderFilters, renderTemplates, sortAndApplyFilters, applyTheme, fullReloadUI, updateSelectionStatus, updateSelectedRowIdentifierDisplay, showConfirmModal, showPromptModal } from './ui-render.js';
+import { populateModals, renderTable, renderFilters, renderTemplates, sortAndApplyFilters, applySelectionColors, fullReloadUI, updateSelectionStatus, updateSelectedRowIdentifierDisplay, showConfirmModal, showPromptModal } from './ui-render.js';
 import { generatePDF, downloadPDF, promptForManualVars, processAndShowPreview, exportFilteredToExcel, exportAllData, exportDb, importAllData, exportDataToExcel } from './pdf-logic.js';
 
 // --- FILAS ---
@@ -477,8 +477,7 @@ function renderDbTables() {
             if (!state.appData.selectedRowColors) state.appData.selectedRowColors = { bg: '#fef3c7', text: '#854d0e' };
             state.appData.selectedRowColors[opt.key] = e.target.value;
             saveData(elements.temporalModeCheckbox);
-            const theme = elements.htmlTag.classList.contains('dark') ? 'dark' : 'light';
-            applyTheme(theme, handleRowSelection, handleCellUpdate);
+            applySelectionColors(handleRowSelection, handleCellUpdate);
         };
         wrap.appendChild(lbl); wrap.appendChild(inp); selectionColorsGrid.appendChild(wrap);
     });
@@ -536,6 +535,32 @@ function renderDbTables() {
     alertsTable.appendChild(alertsTbody); alertsSection.appendChild(alertsTable);
     const addAlertBtn = document.createElement('button'); addAlertBtn.className = "mt-2 text-sm text-sky-600 dark:text-sky-400 hover:text-sky-800"; addAlertBtn.textContent = '+ Añadir Alerta'; addAlertBtn.onclick = () => { if (!state.appData.visualAlerts) state.appData.visualAlerts = []; state.appData.visualAlerts.push({ id: Date.now(), enabled: true, color: { bg: '#fee2e2', text: '#991b1b' }, condition: '>=', value: '15' }); renderDbTables(); saveData(elements.temporalModeCheckbox); }; alertsSection.appendChild(addAlertBtn);
     rightCol.appendChild(alertsSection);
+
+    // Resúmenes de Vencimientos
+    const rangesSection = createSection('Categorías de Vencimientos (Resumen Superior)');
+    const rangesTable = document.createElement('table'); rangesTable.className = 'w-full text-sm'; rangesTable.innerHTML = `<thead class="border-b dark:border-gray-700 text-gray-700 dark:text-gray-300 text-center"><th class="p-2 text-left">Nombre</th><th class="p-2 w-16">Min</th><th class="p-2 w-16">Max</th><th class="p-2 w-10" title="Color de Fondo">F.</th><th class="p-2 w-10" title="Color de Texto">T.</th><th class="p-2 w-8"></th></thead>`;
+    const rangesTbody = document.createElement('tbody');
+    (state.appData.deadlineRanges || []).forEach(range => {
+        const tr = document.createElement('tr'); tr.className = "border-b dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors";
+        tr.innerHTML = `
+            <td class="p-1"><input type="text" class="range-input w-full bg-transparent border-0 border-b border-gray-300 dark:border-gray-600 focus:border-sky-500 focus:ring-0 px-1 py-1" value="${escapeHtml(range.name)}" data-id="${range.id}" data-field="name"></td>
+            <td class="p-1"><input type="number" class="range-input w-full bg-gray-50 dark:bg-gray-700 p-1 border rounded dark:border-gray-600 text-center" value="${range.min}" data-id="${range.id}" data-field="min"></td>
+            <td class="p-1"><input type="number" class="range-input w-full bg-gray-50 dark:bg-gray-700 p-1 border rounded dark:border-gray-600 text-center" value="${range.max}" data-id="${range.id}" data-field="max"></td>
+            <td class="p-1"><input type="color" class="range-input-color w-full h-8 p-0 border-0 bg-transparent rounded cursor-pointer" value="${range.color.bg}" data-id="${range.id}" data-field="bg"></td>
+            <td class="p-1"><input type="color" class="range-input-color w-full h-8 p-0 border-0 bg-transparent rounded cursor-pointer" value="${range.color.text}" data-id="${range.id}" data-field="text"></td>
+            <td class="p-1 text-center"><button class="range-delete-btn text-red-500 hover:text-red-700 font-bold" data-id="${range.id}">X</button></td>
+        `;
+        rangesTbody.appendChild(tr);
+    });
+    rangesTable.appendChild(rangesTbody); rangesSection.appendChild(rangesTable);
+    const addRangeBtn = document.createElement('button'); addRangeBtn.className = "mt-2 text-sm text-sky-600 dark:text-sky-400 hover:text-sky-800 font-semibold"; addRangeBtn.textContent = '+ Añadir Categoría';
+    addRangeBtn.onclick = () => {
+        if (!state.appData.deadlineRanges) state.appData.deadlineRanges = [];
+        state.appData.deadlineRanges.push({ id: Date.now(), name: 'Nueva Categoría', min: 0, max: 10, color: { bg: '#e5e7eb', text: '#374151' } });
+        renderDbTables(); saveData(elements.temporalModeCheckbox); fullReloadUI(handleRowSelection, handleCellUpdate);
+    };
+    rangesSection.appendChild(addRangeBtn);
+    rightCol.appendChild(rangesSection);
 
     // Rows per page
     const visualSettingsSection = createSection('Ajustes de Visualización');
@@ -693,6 +718,34 @@ function handleAlertsDbDelete(e) {
     if (button && button.dataset.id) showConfirmModal('¿Eliminar esta alerta visual?', () => { state.appData.visualAlerts = (state.appData.visualAlerts || []).filter(a => a.id != button.dataset.id); saveData(elements.temporalModeCheckbox); renderDbTables(); sortAndApplyFilters(handleRowSelection, handleCellUpdate); });
 }
 
+function handleRangesDbUpdate(e) {
+    const input = e.target.closest('.range-input, .range-input-color'); if (!input) return;
+    const { id, field } = input.dataset; if (!id || !field) return;
+    const range = (state.appData.deadlineRanges || []).find(r => r.id == id); if (!range) return;
+    
+    if (field === 'bg' || field === 'text') {
+        range.color[field] = input.value;
+    } else if (field === 'min' || field === 'max') {
+        range[field] = parseInt(input.value, 10) || 0;
+    } else {
+        range[field] = input.value;
+    }
+    saveDataDebounced(elements.temporalModeCheckbox);
+    // Reload UI just for the summary bar
+    if (typeof updateDeadlineSummaryBar === 'function') updateDeadlineSummaryBar(handleRowSelection, handleCellUpdate);
+    else fullReloadUI(handleRowSelection, handleCellUpdate);
+}
+
+function handleRangesDbDelete(e) {
+    const button = e.target.closest('.range-delete-btn');
+    if (button && button.dataset.id) showConfirmModal('¿Eliminar esta categoría de vencimientos?', () => { 
+        state.appData.deadlineRanges = (state.appData.deadlineRanges || []).filter(r => r.id != button.dataset.id); 
+        saveData(elements.temporalModeCheckbox); 
+        renderDbTables(); 
+        fullReloadUI(handleRowSelection, handleCellUpdate); 
+    });
+}
+
 async function handleBulkDelete() {
     const checkedBoxes = document.querySelectorAll('.status-delete-checkbox:checked'); if (checkedBoxes.length === 0) return;
     const deleteCol = state.appData.bulkDeleteColumn; if (!deleteCol) { showToast('No se ha seleccionado una columna.', 'error'); return; }
@@ -789,15 +842,22 @@ function setupEventListeners() {
 
     elements.manageDbBtn.addEventListener('click', openDbModal);
     elements.dbModal.addEventListener('click', (e) => {
+        if (e.target.type === 'color') {
+            // Forzar disparo del evento input si el valor actual es the default black y clickea para abrir el picker,
+            // permitiendo que no haga falta arrastrar o elegir otro color para asignarlo la primera vez.
+            setTimeout(() => e.target.dispatchEvent(new Event('input', { bubbles: true })), 10);
+        }
         if (e.target.id === 'close-db-btn') { elements.dbModal.classList.remove('active'); fullReloadUI(handleRowSelection, handleCellUpdate); }
         if (e.target.id === 'export-db-btn') exportDb();
         if (e.target.closest('.alert-delete-btn')) handleAlertsDbDelete(e);
+        else if (e.target.closest('.range-delete-btn')) handleRangesDbDelete(e);
         else if (e.target.id === 'execute-bulk-delete-btn') handleBulkDelete();
         else handleDbDelete(e);
     });
     elements.dbModal.addEventListener('focusout', e => { if (e.target.tagName === 'INPUT' && e.target.dataset.dbKey && e.target.dataset.isKey === 'true') handleDbUpdate(e); });
     elements.dbModal.addEventListener('change', e => {
         if (e.target.classList.contains('alert-input') || e.target.classList.contains('alert-input-color')) handleAlertsDbUpdate(e);
+        else if (e.target.classList.contains('range-input') || e.target.classList.contains('range-input-color')) handleRangesDbUpdate(e);
         else if (e.target.classList.contains('db-color-input')) handleColorDbUpdate(e);
         else if (e.target.dataset.dbKey) handleDbUpdate(e);
         else if (e.target.classList.contains('status-delete-checkbox')) {
@@ -807,8 +867,11 @@ function setupEventListeners() {
             if (dateConditionContainer) dateConditionContainer.classList.toggle('hidden', checkedBoxes.length === 0);
         }
     });
-
-    elements.themeToggle.addEventListener('click', () => { const newTheme = elements.htmlTag.classList.contains('dark') ? 'light' : 'dark'; applyTheme(newTheme, handleRowSelection, handleCellUpdate); });
+    
+    // Add input event listener for live updates on text/number inputs of ranges
+    elements.dbModal.addEventListener('input', e => {
+        if (e.target.classList.contains('range-input')) handleRangesDbUpdate(e);
+    });
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
@@ -838,8 +901,7 @@ function init() {
     loadData(elements.temporalModeCheckbox, addRow);
     setupEventListeners();
     recalculateAllDays(elements.temporalModeCheckbox);
-    const savedTheme = localStorage.getItem('theme');
-    applyTheme(savedTheme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'), handleRowSelection, handleCellUpdate);
+    applySelectionColors(handleRowSelection, handleCellUpdate);
     updateSelectedRowIdentifierDisplay();
     console.log("GTN v12 (Modular) inicializado.");
     setTimeout(() => { elements.loadingOverlay.classList.remove('active'); setupScrollSync(); }, 300);

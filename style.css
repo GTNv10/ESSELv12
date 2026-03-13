@@ -276,11 +276,12 @@ html.dark #data-table th {
 }
 
 #data-table td {
-    padding: 1.25rem 1rem;
+    padding: 0;
     background-color: transparent;
     border-top: 1px solid #f1f5f9;
     border-bottom: 1px solid #f1f5f9;
     transition: background-color 0.15s ease;
+    height: 1px;
 }
 
 #data-table td:first-child {
@@ -317,29 +318,9 @@ html.dark #data-table td:last-child {
 
 
 /* --- SELECTION & FOCUS STYLES --- */
-.selected-row {
-    color: var(--color-selection-text, #854d0e) !important;
-}
-
-html.dark .selected-row {
-    color: var(--color-selection-text, #f8fafc) !important;
-}
-
 .selected-row td {
-    background: var(--color-selection-bg, #fef3c7) !important;
-    border-color: var(--color-selection-text, #fde68a) !important;
-    color: var(--color-selection-text, #854d0e) !important;
-}
-
-html.dark .selected-row td {
-    background: var(--color-selection-bg, #334155) !important;
-    border-color: var(--color-selection-text, #475569) !important;
-    color: var(--color-selection-text, #f8fafc) !important;
-}
-
-.selected-row .sticky-col,
-.selected-row:hover .sticky-col {
-    background-color: inherit !important;
+    background-color: var(--color-selection-bg) !important;
+    color: var(--color-selection-text) !important;
 }
 
 .data-cell:focus,

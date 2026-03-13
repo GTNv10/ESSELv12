@@ -403,7 +403,7 @@ export async function downloadPDF() {
             let cleanParagraph = paragraph;
             let currentFontSize = baseFontSize;
             let isGlobalBold = false;
-            let postParagraphSpacing = 4; // Espacio extra después de cada párrafo (en mm)
+            let postParagraphSpacing = 0; // Se elimina el espacio extra por defecto, usando solo saltos de línea naturales
 
             if (isHeading1) {
                 cleanParagraph = paragraph.substring(2);
@@ -415,23 +415,24 @@ export async function downloadPDF() {
                 cleanParagraph = paragraph.substring(3);
                 currentFontSize = baseFontSize + 4;
                 isGlobalBold = true;
-                postParagraphSpacing = 5;
+                postParagraphSpacing = 4;
                 cursorY += 2;
             } else if (isHeading3) {
                 cleanParagraph = paragraph.substring(4);
                 currentFontSize = baseFontSize + 2;
                 isGlobalBold = true;
-                postParagraphSpacing = 4;
+                postParagraphSpacing = 2;
             }
 
             const currentLineHeight = (currentFontSize * 1.5) * 0.352778; // Interlineado 1.5
             addPageIfNeeded(currentLineHeight);
 
+            // Reensamblar el parser markdown para los tokens
             const tokens = parseMarkdown(cleanParagraph);
             if (isGlobalBold) tokens.forEach(t => t.bold = true);
 
             // Reensamblar en palabras manteniendola estructura de tokens
-            const words = [];
+            let words = [];
             let currentWordTokens = [];
 
             tokens.forEach(token => {
@@ -450,6 +451,42 @@ export async function downloadPDF() {
             if (currentWordTokens.length > 0) {
                 words.push({ tokens: currentWordTokens, width: calculateWordWidth(currentWordTokens, currentFontSize) });
             }
+
+            // Dividir palabras gigantes que superan el ancho disponible
+            const safeWords = [];
+            words.forEach(word => {
+                if (word.width > usableWidth) {
+                    let chunkTokens = [];
+                    let chunkWidth = 0;
+                    word.tokens.forEach(token => {
+                        let tokenStr = token.text;
+                        doc.setFont(fontName, getFontStyle(token.bold, token.italic));
+                        for (let i = 0; i < tokenStr.length; i++) {
+                            const char = tokenStr[i];
+                            const charWidth = doc.getStringUnitWidth(char) * currentFontSize / doc.internal.scaleFactor;
+                            if (chunkWidth + charWidth > usableWidth) {
+                                safeWords.push({ tokens: chunkTokens, width: chunkWidth });
+                                chunkTokens = [{ text: char, bold: token.bold, italic: token.italic }];
+                                chunkWidth = charWidth;
+                                doc.setFont(fontName, getFontStyle(token.bold, token.italic));
+                            } else {
+                                if (chunkTokens.length > 0 && chunkTokens[chunkTokens.length - 1].bold === token.bold && chunkTokens[chunkTokens.length - 1].italic === token.italic) {
+                                    chunkTokens[chunkTokens.length - 1].text += char;
+                                } else {
+                                    chunkTokens.push({ text: char, bold: token.bold, italic: token.italic });
+                                }
+                                chunkWidth += charWidth;
+                            }
+                        }
+                    });
+                    if (chunkTokens.length > 0) {
+                        safeWords.push({ tokens: chunkTokens, width: chunkWidth });
+                    }
+                } else {
+                    safeWords.push(word);
+                }
+            });
+            words = safeWords;
 
             // Wrapping
             const lines = [];
@@ -536,9 +573,15 @@ export async function downloadPDF() {
                     });
                 }
             } else {
-                const paragraphs = part.split('\n');
+                // Separar los párrafos genuinos (doble salto de línea)
+                const paragraphs = part.split(/\n\s*\n/);
                 paragraphs.forEach(paragraph => {
-                    processParagraph(paragraph);
+                    // Los saltos simples dentro de un mismo párrafo se reemplazan por espacios
+                    const cleanedParagraph = paragraph.replace(/\n/g, ' ');
+                    processParagraph(cleanedParagraph);
+                    
+                    // Añadir explícitamente el espacio de salto de párrafo (antes lo hacíamos con \n simples)
+                    cursorY += baseFontSize * 0.352778; 
                 });
             }
         }

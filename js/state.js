@@ -133,6 +133,17 @@ export function loadData(temporalCheckbox, addRowCallback) {
                     state.appData.keyColumns.dateForCalculation = foundDateCol || null;
                     state.appData.keyColumns.daysDisplay = foundDaysCol || null;
                 }
+                
+                if (!parsed.deadlineRanges) {
+                    state.appData.deadlineRanges = [
+                        { id: 1, name: '🔴 Vencidos', min: 1, max: 9999, color: { bg: '#fee2e2', text: '#991b1b' } },
+                        { id: 2, name: '🟠 Hoy', min: 0, max: 0, color: { bg: '#ffedd5', text: '#9a3412' } },
+                        { id: 3, name: '🟡 Mañana', min: -1, max: -1, color: { bg: '#fef9c3', text: '#854d0e' } },
+                        { id: 4, name: '🔵 Esta Semana', min: -7, max: -2, color: { bg: '#e0f2fe', text: '#075985' } },
+                        { id: 5, name: '⚪ Este Mes', min: -30, max: -8, color: { bg: '#f3f4f6', text: '#374151' } }
+                    ];
+                }
+                
                 // --- Fin Migración ---
                 return;
             }
@@ -144,6 +155,13 @@ export function loadData(temporalCheckbox, addRowCallback) {
         mainData: [],
         templates: [],
         visualAlerts: [{ id: 1, enabled: true, color: { bg: '#fee2e2', text: '#991b1b' }, condition: '>=', value: '10' }],
+        deadlineRanges: [
+            { id: 1, name: '🔴 Vencidos', min: 1, max: 9999, color: { bg: '#fee2e2', text: '#991b1b' } },
+            { id: 2, name: '🟠 Hoy', min: 0, max: 0, color: { bg: '#ffedd5', text: '#9a3412' } },
+            { id: 3, name: '🟡 Mañana', min: -1, max: -1, color: { bg: '#fef9c3', text: '#854d0e' } },
+            { id: 4, name: '🔵 Esta Semana', min: -7, max: -2, color: { bg: '#e0f2fe', text: '#075985' } },
+            { id: 5, name: '⚪ Este Mes', min: -30, max: -8, color: { bg: '#f3f4f6', text: '#374151' } }
+        ],
         filters: [],
         hideSettings: { column: 'ESTADO', hiddenValues: [] },
         lookupRelations: [],

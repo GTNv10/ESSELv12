@@ -124,8 +124,9 @@ export const calculateDays = (dateStr) => {
 export function formatCuitCuil(value) {
     if (!value) return '';
     const cleaned = String(value).replace(/[^0-9]/g, '');
-    if (cleaned.length !== 11) return value;
-    return `${cleaned.substring(0, 2)}-${cleaned.substring(2, 10)}-${cleaned.substring(10)}`;
+    if (cleaned.length <= 2) return cleaned;
+    if (cleaned.length <= 10) return `${cleaned.substring(0, 2)}-${cleaned.substring(2)}`;
+    return `${cleaned.substring(0, 2)}-${cleaned.substring(2, 10)}-${cleaned.substring(10, 11)}`;
 }
 
 // --- RECÁLCULO ---

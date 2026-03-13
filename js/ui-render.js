@@ -79,12 +79,13 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
             let resolvedBg = '';
             let resolvedText = '';
 
-            if (!isSelected && colorDb && colorColumn) {
+            if (colorDb && colorColumn) {
                 const valueForColor = row[colorColumn];
                 const colorConfig = colorDb[valueForColor] || colorDb['__DEFAULT__'];
                 if (colorConfig) {
-                    resolvedBg = colorConfig.bg || colorConfig.light || '';
-                    const textColor = colorConfig.text || colorConfig.textLight;
+                    const isDark = theme === 'dark';
+                    resolvedBg = isDark ? (colorConfig.bg || '') : (colorConfig.light || colorConfig.bg || '');
+                    const textColor = isDark ? (colorConfig.text || '') : (colorConfig.textLight || colorConfig.text || '');
                     if (textColor && textColor !== 'inherit') resolvedText = textColor;
                 }
             }
@@ -93,11 +94,11 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
             if (resolvedText) tr.style.color = resolvedText;
 
             const selectionTd = document.createElement('td');
-            selectionTd.className = "sticky-col p-1 text-center";
+            selectionTd.className = "sticky-col p-3 text-center align-middle";
             let rowBgColor = resolvedBg || (theme === 'dark'
                 ? (rowIndex % 2 === 1 ? '#1f2937' : '#111827')
                 : (rowIndex % 2 === 1 ? '#ffffff' : '#f9fafb'));
-            selectionTd.style.backgroundColor = isSelected ? '' : rowBgColor;
+            selectionTd.style.backgroundColor = rowBgColor;
 
             const selectButton = document.createElement('button');
             selectButton.className = `selection-button flex items-center justify-center w-8 h-8 rounded-md transition-colors ${isSelected ? 'bg-sky-600 text-white' : 'bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500'}`;
@@ -112,10 +113,8 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
                 td.className = "p-0 text-center align-middle";
                 td.dataset.columnHeader = header;
 
-                if (!isSelected && resolvedBg) {
-                    td.style.backgroundColor = resolvedBg;
-                    if (resolvedText) td.style.color = resolvedText;
-                }
+                if (resolvedBg) td.style.backgroundColor = resolvedBg;
+                if (resolvedText) td.style.color = resolvedText;
 
                 if (header === daysDisplayCol) {
                     const diasValue = parseInt(value, 10);
@@ -137,7 +136,7 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
                     const optionsData = state.appData.referenceDB[listKey];
                     const options = optionsData ? Object.keys(optionsData).filter(k => k !== '__DEFAULT__') : [];
                     const select = document.createElement('select');
-                    select.className = "w-full h-full p-3 bg-transparent border-0 focus:ring-0 text-center";
+                    select.className = "w-full h-full p-3 bg-transparent border-0 focus:ring-0 text-center flex-grow min-h-[3.5rem]";
                     select.innerHTML = `<option value=""></option>` + options.map(opt => `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`).join('');
                     select.onchange = (e) => handleCellUpdateCb(row.id, header, e.target.value);
                     select.style.color = 'inherit';
@@ -148,7 +147,7 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
                     td.appendChild(input);
                 } else {
                     const div = document.createElement('div');
-                    div.className = "data-cell w-full h-full p-3";
+                    div.className = "data-cell w-full h-full p-3 min-h-[3.5rem] min-w-[120px] max-w-[390px] whitespace-pre-wrap break-words outline-none text-center flex flex-col justify-center";
                     div.setAttribute('contenteditable', 'true');
                     div.textContent = value;
                     div.onblur = (e) => handleCellUpdateCb(row.id, header, e.target.textContent);
@@ -372,6 +371,7 @@ export function sortAndApplyFilters(handleRowSelectionCb, handleCellUpdateCb) {
     } else if (state.filteredData.length === 0) { state.currentPage = 1; }
     renderTable(handleRowSelectionCb, handleCellUpdateCb);
     updateSummaryBar();
+    updateDeadlineSummaryBar(handleRowSelectionCb, handleCellUpdateCb);
 }
 
 // --- SUMMARY BAR ---
@@ -392,6 +392,88 @@ export function updateSummaryBar() {
         else { span.style.backgroundColor = theme === 'dark' ? '#374151' : '#e5e7eb'; span.style.color = theme === 'dark' ? '#d1d5db' : '#374151'; }
         span.textContent = `${value}: ${count}`;
         bar.appendChild(span);
+    });
+}
+
+// --- DEADLINE SUMMARY BAR ---
+
+export function updateDeadlineSummaryBar(handleRowSelectionCb, handleCellUpdateCb) {
+    const bar = elements.deadlineSummaryBar;
+    if (!bar) return;
+    bar.innerHTML = '';
+    
+    // Solo mostrar si la tabla tiene los datos necesarios
+    const daysCol = state.appData.keyColumns?.daysDisplay;
+    if (!daysCol || !state.appData.deadlineRanges) return;
+    
+    // Inicializar contadores
+    const counts = {};
+    state.appData.deadlineRanges.forEach(range => {
+        counts[range.id] = 0;
+    });
+    
+    // Contar las filas visibles reales (filteredData)
+    state.filteredData.forEach(row => {
+        const daysVal = parseInt(row[daysCol], 10);
+        if (isNaN(daysVal)) return;
+        
+        // Encontrar en qué rango cae
+        const range = state.appData.deadlineRanges.find(r => daysVal >= r.min && daysVal <= r.max);
+        if (range) {
+            counts[range.id]++;
+        }
+    });
+    
+    const isFiltered = state.appData.mainData.length !== state.filteredData.length;
+
+    // Renderizar los badges
+    state.appData.deadlineRanges.forEach(range => {
+        const count = counts[range.id];
+        
+        // Ocultar la burbuja si estamos filtrando y la cuenta es 0, a menos que sea la burbuja de "Hoy"
+        if (isFiltered && count === 0 && !range.name.toLowerCase().includes('hoy')) {
+            return;
+        }
+
+        const badge = document.createElement('button');
+        
+        // Aplicar opacidad si es 0
+        const opacityClass = count === 0 ? 'opacity-60 hover:opacity-100' : 'opacity-100 shadow-sm';
+        
+        badge.className = `flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold font-mono transition-all duration-200 transform hover:scale-105 active:scale-95 ${opacityClass}`;
+        badge.style.backgroundColor = range.color.bg;
+        badge.style.color = range.color.text;
+        
+        badge.innerHTML = `
+            <span>${escapeHtml(range.name)}</span>
+            <span class="bg-white/30 dark:bg-black/20 px-1.5 py-0.5 rounded-md min-w-[20px] text-center">${count}</span>
+        `;
+        
+        badge.title = `Clic para filtrar entre ${range.min} y ${range.max} días`;
+        
+        badge.onclick = () => {
+            // Limpiar filtros previos de días
+            state.appData.filters = state.appData.filters.filter(f => f.column !== daysCol);
+            
+            // Añadir filtros para el rango cliqueado
+            if (range.min === range.max) {
+                state.appData.filters.push({ column: daysCol, condition: '=', value: range.min.toString() });
+            } else {
+                if (range.min > -9999 && range.min < 9999) {
+                    state.appData.filters.push({ column: daysCol, condition: '>=', value: range.min.toString() });
+                }
+                if (range.max > -9999 && range.max < 9999) {
+                    state.appData.filters.push({ column: daysCol, condition: '<=', value: range.max.toString() });
+                }
+            }
+            
+            state.currentPage = 1;
+            saveData(elements.temporalModeCheckbox);
+            sortAndApplyFilters(handleRowSelectionCb, handleCellUpdateCb);
+            renderFilters(handleRowSelectionCb, handleCellUpdateCb);
+        };
+        
+        bar.appendChild(badge);
     });
 }
 
@@ -422,14 +504,9 @@ export function updateSelectedRowIdentifierDisplay() {
     display.style.display = 'none';
 }
 
-// --- TEMA ---
+// --- TEMA Y COLORES DE SELECCION ---
 
-export function applyTheme(theme, handleRowSelectionCb, handleCellUpdateCb) {
-    localStorage.setItem('theme', theme);
-    elements.htmlTag.className = theme;
-    elements.themeToggleDarkIcon.classList.toggle('hidden', theme === 'dark');
-    elements.themeToggleLightIcon.classList.toggle('hidden', theme !== 'dark');
-
+export function applySelectionColors(handleRowSelectionCb, handleCellUpdateCb) {
     // Set CSS variables for selection colors
     const selColors = state.appData.selectedRowColors || { bg: '#fef3c7', text: '#854d0e' };
     const bg = selColors.bg || selColors.bgLight || '#fef3c7';
