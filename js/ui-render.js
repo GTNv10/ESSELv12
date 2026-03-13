@@ -41,15 +41,21 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
     table.id = "data-table";
     const thead = document.createElement('thead');
 
-    const headersHtml = `<th class="sticky-col p-1 w-12 bg-gray-100 dark:bg-gray-800 border-b-2 dark:border-gray-600"></th>` +
+    const curHCol = state.appData.tableHeaderColors;
+    const headerBg = curHCol?.bg;
+    const headerText = curHCol?.text;
+    const customHeaderStyle = headerBg || headerText ? `style="${headerBg ? `background-color: ${headerBg}; ` : ''}${headerText ? `color: ${headerText};` : ''}"` : '';
+
+    const firstColStyle = headerBg ? `style="background-color: ${headerBg};"` : '';
+    const headersHtml = `<th class="sticky-col p-1 w-12 border-b-2 dark:border-gray-600 ${!headerBg ? 'bg-gray-100 dark:bg-gray-800' : ''}" ${firstColStyle}></th>` +
         state.appData.headers.map(h => {
             const width = state.appData.columnWidths[h] || 'auto';
-            const headerStyle = `style="width: ${width}; min-width: ${width === 'auto' ? '120px' : width};"`;
+            const headerStyle = `style="width: ${width}; min-width: ${width === 'auto' ? '120px' : width}; ${headerBg ? `background-color: ${headerBg}; ` : ''}${headerText ? `color: ${headerText};` : ''}"`;
             const sortIndicator = state.appData.sortBy === h ? (state.appData.sortOrder === 'asc' ? ' 🔼' : ' 🔽') : '';
             return `<th ${headerStyle} data-header-sort="${h}">${h.replace(/_/g, ' ')}${sortIndicator}</th>`;
         }).join('');
 
-    thead.innerHTML = `<tr class="sticky-header text-xs text-gray-700 dark:text-gray-400 uppercase bg-gray-100 dark:bg-gray-800 shadow-sm">${headersHtml}</tr>`;
+    thead.innerHTML = `<tr class="sticky-header text-xs uppercase shadow-sm ${!headerBg ? 'bg-gray-100 dark:bg-gray-800' : ''} ${!headerText ? 'text-gray-700 dark:text-gray-400' : ''}" ${customHeaderStyle}>${headersHtml}</tr>`;
     table.appendChild(thead);
 
     const tbody = document.createElement('tbody');
@@ -83,9 +89,8 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
                 const valueForColor = row[colorColumn];
                 const colorConfig = colorDb[valueForColor] || colorDb['__DEFAULT__'];
                 if (colorConfig) {
-                    const isDark = theme === 'dark';
-                    resolvedBg = isDark ? (colorConfig.bg || '') : (colorConfig.light || colorConfig.bg || '');
-                    const textColor = isDark ? (colorConfig.text || '') : (colorConfig.textLight || colorConfig.text || '');
+                    resolvedBg = colorConfig.bg || colorConfig.light || '';
+                    const textColor = colorConfig.text || colorConfig.textLight || '';
                     if (textColor && textColor !== 'inherit') resolvedText = textColor;
                 }
             }

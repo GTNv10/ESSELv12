@@ -375,6 +375,10 @@ export async function downloadPDF() {
             if (!isLastLine && lineWords.length > 1) {
                 const emptySpace = usableWidth - totalWordsWidth;
                 extraSpacePerWord = emptySpace / (lineWords.length - 1);
+                // Evitar justificación extrema por URLs/palabras muy largas en la siguiente línea
+                if (extraSpacePerWord > spaceWidth * 3) {
+                    extraSpacePerWord = spaceWidth; // revertir a alineación a la izquierda
+                }
             } else {
                 extraSpacePerWord = spaceWidth; // Alineación izquierda normal
             }
@@ -524,7 +528,7 @@ export async function downloadPDF() {
         // --- FIN PARSER MEJORADO ---
 
         doc.setFontSize(baseFontSize);
-        
+
         const contentWithPlaceholders = state.pendingPDFGeneration.template.content;
         // Build manualValues once (not per-placeholder inside replace() callback)
         const manualValues = {};
@@ -540,7 +544,7 @@ export async function downloadPDF() {
             return '';
         });
         const parts = finalRenderableContent.split(/(\{\{IMAGEN:.*?\}\})/g);
-        
+
         for (const part of parts) {
             if (part.startsWith('{{IMAGEN:')) {
                 const imageName = part.slice(9, -2).trim();
@@ -579,9 +583,9 @@ export async function downloadPDF() {
                     // Los saltos simples dentro de un mismo párrafo se reemplazan por espacios
                     const cleanedParagraph = paragraph.replace(/\n/g, ' ');
                     processParagraph(cleanedParagraph);
-                    
+
                     // Añadir explícitamente el espacio de salto de párrafo (antes lo hacíamos con \n simples)
-                    cursorY += baseFontSize * 0.352778; 
+                    cursorY += baseFontSize * 0.352778;
                 });
             }
         }

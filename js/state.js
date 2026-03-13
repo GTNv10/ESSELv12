@@ -144,6 +144,8 @@ export function loadData(temporalCheckbox, addRowCallback) {
                     ];
                 }
                 
+                if (typeof parsed.tableHeaderColors === 'undefined') state.appData.tableHeaderColors = { bg: '', text: '' };
+                
                 // --- Fin Migración ---
                 return;
             }
@@ -194,8 +196,8 @@ export function loadData(temporalCheckbox, addRowCallback) {
         tableTextColor: 'inherit',
         rowsPerPage: 10,
         colorCodingColumn: 'ESTADO',
-        bulkDeleteColumn: 'ESTADO',
         selectedRowIdentifierColumn: 'EXPEDIENTE',
+        tableHeaderColors: { bg: '', text: '' }
     };
 
     if (state.appData.mainData.length === 0 && addRowCallback) {

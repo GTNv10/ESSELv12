@@ -586,7 +586,49 @@ function renderDbTables() {
     autoAcceptDiv.appendChild(autoAcceptLabel);
     pdfFilenameSection.appendChild(autoAcceptDiv);
 
-    leftCol.appendChild(pdfFilenameSection);
+    // HEADER COLORS
+    const headerColorTitle = document.createElement('h5');
+    headerColorTitle.className = 'font-bold text-md text-gray-800 dark:text-gray-100 mt-4 mb-2';
+    headerColorTitle.textContent = 'Colores del Encabezado de la Tabla';
+    visualSettingsSection.appendChild(headerColorTitle);
+
+    const headerColorsGrid = document.createElement('div');
+    headerColorsGrid.className = 'grid grid-cols-2 gap-4 text-sm max-w-sm';
+
+    const curHeaderColors = state.appData.tableHeaderColors || { bg: '', text: '' };
+
+    [
+        { key: 'bg', label: 'Fondo', default: '#f3f4f6' },
+        { key: 'text', label: 'Texto', default: '#374151' }
+    ].forEach(opt => {
+        const wrap = document.createElement('div');
+        const lbl = document.createElement('label'); lbl.className = 'block text-xs text-gray-600 dark:text-gray-400 mb-1'; lbl.textContent = opt.label;
+        const inp = document.createElement('input'); inp.type = 'color'; inp.className = 'w-full h-8 p-0 border-0 bg-transparent rounded cursor-pointer';
+        inp.value = curHeaderColors[opt.key] || opt.default;
+        inp.onchange = (e) => {
+            if (!state.appData.tableHeaderColors) state.appData.tableHeaderColors = { bg: '', text: '' };
+            state.appData.tableHeaderColors[opt.key] = e.target.value;
+            saveData(elements.temporalModeCheckbox);
+            fullReloadUI(handleRowSelection, handleCellUpdate);
+        };
+        wrap.appendChild(lbl); wrap.appendChild(inp); headerColorsGrid.appendChild(wrap);
+    });
+    
+    // Botón para restablecer
+    const resetHeaderColorsBtn = document.createElement('button');
+    resetHeaderColorsBtn.className = 'col-span-2 mt-1 text-xs text-sky-600 dark:text-sky-400 hover:underline text-left';
+    resetHeaderColorsBtn.textContent = 'Restablecer colores por defecto';
+    resetHeaderColorsBtn.onclick = () => {
+        state.appData.tableHeaderColors = { bg: '', text: '' };
+        saveData(elements.temporalModeCheckbox);
+        renderDbTables();
+        fullReloadUI(handleRowSelection, handleCellUpdate);
+    };
+    headerColorsGrid.appendChild(resetHeaderColorsBtn);
+
+    visualSettingsSection.appendChild(headerColorsGrid);
+
+    leftCol.appendChild(visualSettingsSection);
 
     // Lookups
     const lookupSection = createSection('Búsquedas Automáticas (VLOOKUP)');
