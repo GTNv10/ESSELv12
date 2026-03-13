@@ -31,7 +31,6 @@ export const elements = {
     dbModal: document.getElementById('db-modal'),
     columnsModal: document.getElementById('columns-modal'),
     imageUploadModal: document.getElementById('image-upload-modal'),
-    temporalModeCheckbox: document.getElementById('temporal-mode-checkbox'),
     loadingOverlay: document.getElementById('loading-overlay'),
     increaseFontSizeBtn: document.getElementById('increase-font-size'),
     decreaseFontSizeBtn: document.getElementById('decrease-font-size'),

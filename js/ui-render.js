@@ -181,7 +181,7 @@ export function renderTable(handleRowSelectionCb, handleCellUpdateCb) {
                 state.appData.sortBy = header;
                 state.appData.sortOrder = 'asc';
             }
-            saveData(elements.temporalModeCheckbox);
+            saveData(null);
             sortAndApplyFilters(handleRowSelectionCb, handleCellUpdateCb);
         });
     });
@@ -235,7 +235,7 @@ export function renderFilters(handleRowSelectionCb, handleCellUpdateCb) {
     const addFilterBtn = document.createElement('button');
     addFilterBtn.textContent = 'Añadir Filtro';
     addFilterBtn.className = 'text-sm bg-sky-500 text-white font-semibold py-2 px-3 rounded-lg hover:bg-sky-600';
-    addFilterBtn.onclick = () => { state.appData.filters.push({ column: '', condition: '=', value: '' }); saveData(elements.temporalModeCheckbox); renderFilters(handleRowSelectionCb, handleCellUpdateCb); };
+    addFilterBtn.onclick = () => { state.appData.filters.push({ column: '', condition: '=', value: '' }); saveData(null); renderFilters(handleRowSelectionCb, handleCellUpdateCb); };
     controlsContainer.appendChild(addFilterBtn);
 
     const applyBtn = document.createElement('button');
@@ -248,7 +248,7 @@ export function renderFilters(handleRowSelectionCb, handleCellUpdateCb) {
         const clearBtn = document.createElement('button');
         clearBtn.textContent = 'Limpiar';
         clearBtn.className = 'text-sm bg-gray-500 text-white font-semibold py-2 px-3 rounded-lg hover:bg-gray-600';
-        clearBtn.onclick = () => { state.appData.filters = []; saveData(elements.temporalModeCheckbox); renderFilters(handleRowSelectionCb, handleCellUpdateCb); sortAndApplyFilters(handleRowSelectionCb, handleCellUpdateCb); };
+        clearBtn.onclick = () => { state.appData.filters = []; saveData(null); renderFilters(handleRowSelectionCb, handleCellUpdateCb); sortAndApplyFilters(handleRowSelectionCb, handleCellUpdateCb); };
         controlsContainer.appendChild(clearBtn);
     }
     elements.filtersContainer.appendChild(controlsContainer);
@@ -261,7 +261,7 @@ function createFilterUI(filter, index, handleRowSelectionCb, handleCellUpdateCb)
     const columnSelect = document.createElement('select');
     columnSelect.className = 'p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm w-40';
     columnSelect.innerHTML = `<option value="">-- Columna --</option>` + state.appData.headers.map(h => `<option value="${h}" ${filter.column === h ? 'selected' : ''}>${h}</option>`).join('');
-    columnSelect.onchange = (e) => { filter.column = e.target.value; filter.value = ''; const nf = createFilterUI(filter, index, handleRowSelectionCb, handleCellUpdateCb); wrapper.replaceWith(nf); saveData(elements.temporalModeCheckbox); };
+    columnSelect.onchange = (e) => { filter.column = e.target.value; filter.value = ''; const nf = createFilterUI(filter, index, handleRowSelectionCb, handleCellUpdateCb); wrapper.replaceWith(nf); saveData(null); };
     wrapper.appendChild(columnSelect);
 
     if (filter.column) {
@@ -281,7 +281,7 @@ function createFilterUI(filter, index, handleRowSelectionCb, handleCellUpdateCb)
             conditionSelect.innerHTML = `<option value="=" ${filter.condition === '=' ? 'selected' : ''}>Es igual a</option>`;
             filter.condition = '=';
         }
-        conditionSelect.onchange = (e) => { filter.condition = e.target.value; saveDataDebounced(elements.temporalModeCheckbox); };
+        conditionSelect.onchange = (e) => { filter.condition = e.target.value; saveDataDebounced(null); };
         wrapper.appendChild(conditionSelect);
 
         if (format === 'list') {
@@ -291,10 +291,10 @@ function createFilterUI(filter, index, handleRowSelectionCb, handleCellUpdateCb)
             const valueSelect = document.createElement('select');
             valueSelect.className = 'flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm';
             valueSelect.innerHTML = `<option value="">Todos</option>` + options.map(opt => `<option value="${opt}" ${filter.value === opt ? 'selected' : ''}>${opt}</option>`).join('');
-            valueSelect.onchange = (e) => { filter.value = e.target.value; saveData(elements.temporalModeCheckbox); };
+            valueSelect.onchange = (e) => { filter.value = e.target.value; saveData(null); };
             wrapper.appendChild(valueSelect);
         } else if (format === 'date') {
-            const valueInput = createDateInputComponent(filter.value || '', (newValue) => { filter.value = newValue; saveData(elements.temporalModeCheckbox); });
+            const valueInput = createDateInputComponent(filter.value || '', (newValue) => { filter.value = newValue; saveData(null); });
             valueInput.placeholder = "DD/MM/YYYY";
             valueInput.className = 'flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm';
             wrapper.appendChild(valueInput);
@@ -303,7 +303,7 @@ function createFilterUI(filter, index, handleRowSelectionCb, handleCellUpdateCb)
             valueInput.type = 'text'; valueInput.placeholder = 'Valor...';
             valueInput.className = 'flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm';
             valueInput.value = filter.value || '';
-            valueInput.oninput = () => { filter.value = valueInput.value; saveDataDebounced(elements.temporalModeCheckbox); };
+            valueInput.oninput = () => { filter.value = valueInput.value; saveDataDebounced(null); };
             wrapper.appendChild(valueInput);
         }
     }
@@ -311,7 +311,7 @@ function createFilterUI(filter, index, handleRowSelectionCb, handleCellUpdateCb)
     const removeBtn = document.createElement('button');
     removeBtn.innerHTML = '&times;'; removeBtn.title = 'Quitar Filtro';
     removeBtn.className = 'text-xl text-red-500 hover:text-red-700 font-bold px-2';
-    removeBtn.onclick = () => { state.appData.filters.splice(index, 1); saveData(elements.temporalModeCheckbox); renderFilters(handleRowSelectionCb, handleCellUpdateCb); sortAndApplyFilters(handleRowSelectionCb, handleCellUpdateCb); };
+    removeBtn.onclick = () => { state.appData.filters.splice(index, 1); saveData(null); renderFilters(handleRowSelectionCb, handleCellUpdateCb); sortAndApplyFilters(handleRowSelectionCb, handleCellUpdateCb); };
     wrapper.appendChild(removeBtn);
     return wrapper;
 }
@@ -437,26 +437,23 @@ export function updateDeadlineSummaryBar(handleRowSelectionCb, handleCellUpdateC
     state.appData.deadlineRanges.forEach(range => {
         const count = counts[range.id];
         
-        // Ocultar la burbuja si estamos filtrando y la cuenta es 0, a menos que sea la burbuja de "Hoy"
-        if (isFiltered && count === 0 && !range.name.toLowerCase().includes('hoy')) {
-            return;
-        }
+        // Cuando hay filtro activo, solo mostrar badges con filas > 0
+        if (isFiltered && count === 0) return;
+        // Cuando no hay filtro, tambien ocultar los que son 0 para no saturar
+        if (!isFiltered && count === 0) return;
 
         const badge = document.createElement('button');
         
-        // Aplicar opacidad si es 0
-        const opacityClass = count === 0 ? 'opacity-60 hover:opacity-100' : 'opacity-100 shadow-sm';
-        
-        badge.className = `flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold font-mono transition-all duration-200 transform hover:scale-105 active:scale-95 ${opacityClass}`;
+        badge.className = `inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-150 hover:brightness-95 active:scale-95 shadow-sm border border-black/5`;
         badge.style.backgroundColor = range.color.bg;
         badge.style.color = range.color.text;
         
         badge.innerHTML = `
             <span>${escapeHtml(range.name)}</span>
-            <span class="bg-white/30 dark:bg-black/20 px-1.5 py-0.5 rounded-md min-w-[20px] text-center">${count}</span>
+            <span class="ml-1 font-bold opacity-80 tabular-nums">${count}</span>
         `;
         
-        badge.title = `Clic para filtrar entre ${range.min} y ${range.max} días`;
+        badge.title = `Filtrar: ${range.name} (entre ${range.min} y ${range.max} días)`;
         
         badge.onclick = () => {
             // Limpiar filtros previos de días
@@ -475,7 +472,7 @@ export function updateDeadlineSummaryBar(handleRowSelectionCb, handleCellUpdateC
             }
             
             state.currentPage = 1;
-            saveData(elements.temporalModeCheckbox);
+            saveData(null);
             sortAndApplyFilters(handleRowSelectionCb, handleCellUpdateCb);
             renderFilters(handleRowSelectionCb, handleCellUpdateCb);
         };

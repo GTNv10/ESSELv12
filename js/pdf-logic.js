@@ -431,7 +431,18 @@ export async function downloadPDF() {
             const currentLineHeight = (currentFontSize * 1.5) * 0.352778; // Interlineado 1.5
             addPageIfNeeded(currentLineHeight);
 
-            // Reensamblar el parser markdown para los tokens
+            // --- VIÑETAS: bullet con indentación fija ---
+            const isBullet = cleanParagraph.startsWith('\u2022 ') || cleanParagraph.startsWith('\u2022\t') || cleanParagraph === '\u2022';
+            let bulletIndent = 0;
+            if (isBullet) {
+                doc.setFont(fontName, 'normal');
+                doc.setFontSize(currentFontSize);
+                const bulletCharWidth = doc.getStringUnitWidth('\u2022') * currentFontSize / doc.internal.scaleFactor;
+                const bulletSpaceFixed = doc.getStringUnitWidth('  ') * currentFontSize / doc.internal.scaleFactor;
+                bulletIndent = bulletCharWidth + bulletSpaceFixed;
+                cleanParagraph = cleanParagraph.slice(2); // Quita '• '
+            }
+
             const tokens = parseMarkdown(cleanParagraph);
             if (isGlobalBold) tokens.forEach(t => t.bold = true);
 
@@ -497,10 +508,12 @@ export async function downloadPDF() {
             let currentLineWords = [];
             let currentLineWidth = 0;
             const spaceWidth = (doc.getStringUnitWidth(' ') * currentFontSize / doc.internal.scaleFactor) * 0.9; // Base space
+            const effectiveMargin = margin + bulletIndent;
+            const effectiveWidth = usableWidth - bulletIndent;
 
             words.forEach(word => {
                 const widthIfAdded = currentLineWidth + (currentLineWords.length > 0 ? spaceWidth : 0) + word.width;
-                if (widthIfAdded > usableWidth && currentLineWords.length > 0) {
+                if (widthIfAdded > effectiveWidth && currentLineWords.length > 0) {
                     lines.push(currentLineWords);
                     currentLineWords = [word];
                     currentLineWidth = word.width;
@@ -516,8 +529,40 @@ export async function downloadPDF() {
                 const isLastLine = index === lines.length - 1;
                 addPageIfNeeded(currentLineHeight);
                 // Si es un título, nunca lo justificamos (queda raro), lo alineamos a la izquierda
-                const forceLeftAlign = isLastLine || isHeading1 || isHeading2 || isHeading3;
-                renderLine(line, cursorY, currentFontSize, forceLeftAlign);
+                const forceLeftAlign = isLastLine || isHeading1 || isHeading2 || isHeading3 || isBullet;
+
+                // Dibujar el bullet solo en la primera línea, a la izquierda fija
+                if (isBullet && index === 0) {
+                    doc.setFont(fontName, 'normal');
+                    doc.setFontSize(currentFontSize);
+                    doc.text('\u2022', margin, cursorY);
+                }
+
+                // Renderizar la línea con el margen ajustado si es viñeta
+                if (isBullet) {
+                    // Temporalmente remplazo margin por effectiveMargin en renderLine
+                    const savedMargin = margin;
+                    // renderLine usa la clausura `margin` directamente, así que redibujamos manualmente
+                    doc.setFontSize(currentFontSize);
+                    const spW = doc.getStringUnitWidth(' ') * currentFontSize / doc.internal.scaleFactor;
+                    let totalW = line.reduce((s, w) => s + w.width, 0);
+                    let gap = spW;
+                    if (!forceLeftAlign && line.length > 1) {
+                        const candidate = (effectiveWidth - totalW) / (line.length - 1);
+                        gap = candidate > spW * 3 ? spW : candidate;
+                    }
+                    let cx = effectiveMargin;
+                    line.forEach(word => {
+                        word.tokens.forEach(token => {
+                            doc.setFont(fontName, getFontStyle(token.bold, token.italic));
+                            doc.text(token.text, cx, cursorY);
+                            cx += doc.getStringUnitWidth(token.text) * currentFontSize / doc.internal.scaleFactor;
+                        });
+                        cx += gap;
+                    });
+                } else {
+                    renderLine(line, cursorY, currentFontSize, forceLeftAlign);
+                }
                 cursorY += currentLineHeight;
             });
 
@@ -577,15 +622,24 @@ export async function downloadPDF() {
                     });
                 }
             } else {
-                // Separar los párrafos genuinos (doble salto de línea)
-                const paragraphs = part.split(/\n\s*\n/);
-                paragraphs.forEach(paragraph => {
-                    // Los saltos simples dentro de un mismo párrafo se reemplazan por espacios
-                    const cleanedParagraph = paragraph.replace(/\n/g, ' ');
-                    processParagraph(cleanedParagraph);
-
-                    // Añadir explícitamente el espacio de salto de párrafo (antes lo hacíamos con \n simples)
-                    cursorY += baseFontSize * 0.352778;
+                // Separar bloques por doble salto de línea (párrafos con espacio extra)
+                const blocks = part.split(/\n\s*\n/);
+                blocks.forEach((block, blockIndex) => {
+                    // Cada línea simple es una línea independiente en el PDF
+                    const lines = block.split('\n');
+                    lines.forEach(line => {
+                        const trimmed = line.trimEnd();
+                        // Línea vacía = espacio vertical
+                        if (trimmed === '') {
+                            cursorY += baseFontSize * 0.352778;
+                        } else {
+                            processParagraph(trimmed);
+                        }
+                    });
+                    // Espacio extra entre bloques de párrafo (doble salto)
+                    if (blockIndex < blocks.length - 1) {
+                        cursorY += baseFontSize * 0.352778;
+                    }
                 });
             }
         }
@@ -659,7 +713,7 @@ export function importAllData(event) {
                 import('./ui-render.js').then(({ showConfirmModal }) => {
                     showConfirmModal('Esto reemplazará TODOS los datos y ajustes actuales con el contenido del archivo. ¿Continuar?', () => {
                         state.appData = parsed;
-                        saveData(elements.temporalModeCheckbox);
+                        saveData(null);
                         showToast('Copia de seguridad restaurada. La página se recargará.', 'success');
                         setTimeout(() => location.reload(), 1500);
                     }, 'Restaurar Copia de Seguridad');
